@@ -1,53 +1,68 @@
-# WorkBuddy Auto Sign-in Skill
+# workbuddy-auto-signin
 
-Automated daily sign-in for **WorkBuddy** (腾讯云 CodeBuddy AI 助手桌面应用) on Windows.
+WorkBuddy 桌面应用（腾讯云 CodeBuddy AI 助手）**自动签到工具**，通过图像识别 + 坐标点击实现每日积分领取。
 
-## ✨ Features
+> ⚠️ **仅支持 Windows** — 依赖 Win32 API (`ctypes`)、`pyautogui`、`PIL`、`OpenCV`。
 
-- 🎯 **Adaptive Coordinates** - Uses percentage-based positioning, automatically adapts to different window sizes
-- 🔍 **OpenCV Button Detection** - Automatically detects the "立即领取" button via image recognition
-- 🪟 **Smart Window Management** - Handles minimized windows, multi-monitor setups
-- 🔘 **Double-Click Trigger** - Correctly triggers sign-in (single click doesn't work!)
-- 🐛 **Debug Mode** - Save screenshots at each step for troubleshooting
+## 🎯 主要能力
 
-## 📦 Installation
+- **自适应坐标**：使用百分比定位，自动适配不同窗口大小和屏幕分辨率
+- **OpenCV 按钮检测**：自动识别"立即领取"按钮位置，无需手动配置坐标
+- **窗口管理**：自动处理最小化窗口、多显示器、窗口激活
+- **双点击触发**：正确使用双击（单击无法触发签到）
+- **调试模式**：`--debug` 保存每步截图，方便排查问题
 
-### 1. Install as WorkBuddy Skill
+## 🚀 快速开始
 
-Copy this skill to your WorkBuddy skills directory:
-
-```bash
-cp -r workbuddy-auto-signin ~/.workbuddy/skills/
-```
-
-### 2. Install Dependencies
+### 1. 安装依赖
 
 ```bash
 pip install pyautogui pillow numpy opencv-python-headless
 ```
 
-## 🚀 Usage
+### 2. 安装 Skill
 
-### Via WorkBuddy Skill System
-
-Simply say: `签到`, `每日签到`, `WorkBuddy签到`, `自动领取积分`
-
-### Run Directly
+将本 Skill 复制到 WorkBuddy skills 目录：
 
 ```bash
-# Silent mode
+cp -r workbuddy-auto-signin ~/.workbuddy/skills/
+```
+
+### 3. 运行签到
+
+**通过 WorkBuddy 对话**（推荐）：
+```
+签到
+每日签到
+WorkBuddy签到
+自动领取积分
+```
+
+**直接运行脚本**：
+```bash
+# 静默模式
 python scripts/auto_signin.py
 
-# Debug mode (save screenshots)
+# 调试模式（保存截图）
 python scripts/auto_signin.py --debug
 
-# Print current config
+# 查看当前配置
 python scripts/auto_signin.py --save-config
 ```
 
-## ⚙️ Configuration
+## 📝 工作原理
 
-Edit `config/signin_config.json`:
+由于 WorkBuddy 是 **Electron 应用**，其内部 DOM 元素无法通过标准无障碍 API 访问（`pywinauto` UIA 只能看到 `Chrome Legacy Window`）。本 Skill 采用 **视觉方案**：
+
+1. **窗口管理**：通过 Win32 `EnumWindows` 查找 WorkBuddy 窗口，若最小化则恢复，并移动到主显示器固定位置 `(340,50)→(1540,950)`
+2. **打开面板**：点击左下角用户头像，弹出签到面板
+3. **按钮检测**：使用 **OpenCV 灰度阈值（<120）** 在绿色卡片区域内检测深色"立即领取"按钮；若检测失败则回退到配置坐标
+4. **执行签到**：**双击**按钮（单击只会选中但不会执行！）
+5. **结果验证**：捕获结果截图；成功会显示"✅ 领取成功！获得 150 Credits"提示条
+
+## ⚙️ 配置说明
+
+配置文件：`config/signin_config.json`
 
 ```json
 {
@@ -63,39 +78,45 @@ Edit `config/signin_config.json`:
 }
 ```
 
-### Coordinate System
+### 坐标系统（自适应）
 
-| Element | Position | Description |
-|---------|----------|-------------|
-| Avatar | 3.17% from left, 5.33% from bottom | Opens sign-in panel |
-| Button | 8.58% from left, 51.67% from top | "立即领取" button |
+| 元素 | 位置 | 说明 |
+|------|--------|------|
+| 用户头像 | 左侧 3.17%，底部往上 5.33% | 点击打开签到面板 |
+| 签到按钮 | 左侧 8.58%，顶部往下 51.67% | "立即领取"按钮 |
 
-**Adaptive**: Coordinates are percentage-based, so they automatically scale to any window size.
+**自适应说明**：坐标为百分比格式，自动根据窗口大小计算绝对坐标，适配不同屏幕分辨率。
 
-## 🔧 Troubleshooting
+## 🔧 故障排除
 
-| Symptom | Cause | Fix |
-|----------|-------|-----|
-| `WorkBuddy window not found` | App not running | Start WorkBuddy first |
-| Clicks wrong area | Window size changed | Run with `--debug`, check screenshots |
-| Button found but no response | Not using double-click | Config has `click_method: "double"` |
-| OpenCV finds nothing | UI layout changed | Update percentages in config |
+| 现象 | 原因 | 解决方法 |
+|------|------|----------|
+| `WorkBuddy window not found` | 应用未运行 | 先启动 WorkBuddy |
+| 点击到错误位置 | 窗口大小改变 | 运行 `--debug`，检查截图 |
+| 按钮找到但无响应 | 未使用双击 | 配置中已设置 `click_method: "double"` |
+| OpenCV 检测失败 | UI 布局改变 | 更新配置文件中的百分比坐标 |
 
-## 📝 Technical Notes
+## 📂 文件结构
 
-- **Why double-click?** Single click only focuses the button, doesn't trigger sign-in
-- **Why percentage coordinates?** Adapts to different window sizes and screen resolutions
-- **Why OpenCV?** Electron apps don't expose UI elements to accessibility APIs
+| 文件 | 作用 |
+|------|------|
+| `SKILL.md` | AI 模型阅读的指令文档（触发词、工作流程） |
+| `README.md` | 人类阅读的项目说明 |
+| `scripts/auto_signin.py` | 核心签到脚本（自适应坐标版本） |
+| `config/signin_config.json` | 坐标配置文件（百分比格式） |
+| `references/technical_notes.md` | 技术文档（调试历史、像素映射记录） |
+| `templates/` | 调试截图保存目录（`.gitignore` 已忽略） |
 
-See `references/technical_notes.md` for detailed debugging history.
+## 📌 重要技术要点
 
-## 🖥️ Requirements
+- **为什么必须双击？** 单击只会选中按钮，不会触发签到动作
+- **为什么用百分比坐标？** 适配不同窗口大小和屏幕分辨率
+- **为什么用 OpenCV？** Electron 应用不向外暴露 UI 元素，只能通过图像识别
 
-- Windows 10/11
-- Python 3.11+
-- WorkBuddy desktop app running
-- Dependencies: pyautogui, Pillow, numpy, opencv-python-headless
+## 📄 许可证
 
-## 📄 License
+MIT License
 
-MIT
+---
+
+_声明：本工具并非 WorkBuddy 官方出品。_
