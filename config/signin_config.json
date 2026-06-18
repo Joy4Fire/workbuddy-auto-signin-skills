@@ -1,5 +1,11 @@
 {
-  "window_position": {"x": 340, "y": 50, "width": 1200, "height": 900},
+  "window_position": {
+    "width_percent": 0.6,
+    "height_percent": 0.7,
+    "x_percent": 0.2,
+    "y_percent": 0.15,
+    "note": "60% screen width, 70% screen height, 20% from left, 15% from top"
+  },
   "avatar_click": {
     "x_percent": 0.0317,
     "y_from_bottom_percent": 0.0533,
@@ -18,7 +24,7 @@
     "y2_percent": 0.567,
     "note": "Button detection region (scaled by window size)"
   },
-  "version": "v6-adaptive",
-  "last_success": "2026-06-16T09:40",
-  "note": "使用百分比坐标自适应不同窗口大小"
+  "version": "v7-screen-adaptive",
+  "last_success": "2026-06-18T10:16",
+  "note": "屏幕自适应版本，自动检测分辨率并调整窗口大小"
 }

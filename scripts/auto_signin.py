@@ -2,7 +2,7 @@
 """
 WorkBuddy Auto Sign-in Tool
 Automated daily sign-in for WorkBuddy (Electron desktop app) via image recognition + coordinate clicking.
-Supports adaptive coordinate scaling for different window sizes.
+Supports adaptive coordinate scaling and screen resolution detection for different window sizes.
 """
 
 import sys
@@ -17,6 +17,15 @@ from ctypes import wintypes
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8", errors="replace")
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8", errors="replace")
 
+# ── DPI Awareness ─────────────────────────────────────────────
+# Set process to be DPI aware (for accurate screen coordinate calculation)
+try:
+    # Windows 8.1+
+    ctypes.windll.shcore.SetProcessDpiAwareness(1)  # PROCESS_SYSTEM_DPI_AWARE
+except AttributeError:
+    # Windows 7 fallback
+    ctypes.windll.user32.SetProcessDPIAware()
+
 import pyautogui
 from PIL import ImageGrab
 import numpy as np
@@ -27,7 +36,12 @@ import cv2
 pyautogui.FAILSAFE = False  # Prevent corner-triggered failsafe
 
 DEFAULT_CONFIG = {
-    "window_position": {"x": 340, "y": 50, "width": 1200, "height": 900},
+    "window_position": {
+        "width_percent": 0.6,   # 60% of screen width
+        "height_percent": 0.7,  # 70% of screen height
+        "x_percent": 0.2,       # 20% from left (centered)
+        "y_percent": 0.15,      # 15% from top
+    },
     "avatar_click": {
         "x_percent": 0.0317,
         "y_from_bottom_percent": 0.0533,
@@ -62,6 +76,20 @@ class RECT(ctypes.Structure):
     ]
 
 
+def get_screen_resolution():
+    """
+    Get primary monitor resolution.
+    Returns: (width, height) tuple
+    """
+    SM_CXSCREEN = 0
+    SM_CYSCREEN = 1
+    
+    width = user32.GetSystemMetrics(SM_CXSCREEN)
+    height = user32.GetSystemMetrics(SM_CYSCREEN)
+    
+    return width, height
+
+
 def find_workbuddy_window():
     """Find WorkBuddy window by title."""
     EnumWindowsProc = ctypes.WINFUNCTYPE(
@@ -94,10 +122,51 @@ def activate_window(hwnd):
     time.sleep(0.5)
 
 
-def position_window(hwnd, x=340, y=50, w=1200, h=900):
-    """Move/resize window to specified position on primary monitor."""
-    user32.SetWindowPos(hwnd, 0, x, y, w, h, 0)
+def position_window_adaptive(hwnd, config=None):
+    """
+    Move/resize window adaptively based on screen resolution.
+    
+    Args:
+        hwnd: Window handle
+        config: Config dict with window_position settings
+    
+    Returns:
+        (x, y, win_w, win_h) - final window position and size
+    """
+    if config is None:
+        config = DEFAULT_CONFIG["window_position"]
+    
+    # Get screen resolution
+    screen_w, screen_h = get_screen_resolution()
+    
+    # Calculate window size (percentage of screen)
+    width_percent = config.get("width_percent", 0.6)
+    height_percent = config.get("height_percent", 0.7)
+    
+    win_w = int(screen_w * width_percent)
+    win_h = int(screen_h * height_percent)
+    
+    # Calculate position (percentage from left/top)
+    x_percent = config.get("x_percent", 0.2)
+    y_percent = config.get("y_percent", 0.15)
+    
+    x = int(screen_w * x_percent)
+    y = int(screen_h * y_percent)
+    
+    # Ensure window is within screen bounds
+    if x + win_w > screen_w:
+        x = max(0, screen_w - win_w)
+    if y + win_h > screen_h:
+        y = max(0, screen_h - win_h)
+    
+    print(f"  Screen: {screen_w}x{screen_h}")
+    print(f"  Window: ({x},{y})->({x+win_w},{y+win_h}) [{win_w}x{win_h}]")
+    
+    # Position window
+    user32.SetWindowPos(hwnd, 0, x, y, win_w, win_h, 0)
     time.sleep(0.5)
+    
+    return x, y, win_w, win_h
 
 
 def get_rect(hwnd):
@@ -129,7 +198,7 @@ def calc_adaptive_coords(config, left, top, right, bottom):
     Calculate adaptive coordinates based on window size.
     Uses percentage-based positioning for adaptability across different screen resolutions.
     
-    Returns: (avatar_x, avatar_y, btn_x_percent, btn_y_percent)
+    Returns: (avatar_x, avatar_y, btn_x_pct, btn_y_pct)
     """
     win_w = right - left
     win_h = bottom - top
@@ -200,7 +269,7 @@ def run_signin(debug=False, config_override=None):
 
     Steps:
       1. Find WorkBuddy window
-      2. Activate & position window on primary monitor
+      2. Activate & position window adaptively on primary monitor
       3. Click user avatar → open sign-in panel
       4. Detect '立即领取' button (OpenCV or fallback to percentage coords)
       5. Double-click the button
@@ -224,14 +293,17 @@ def run_signin(debug=False, config_override=None):
         return {"status": "error", "message": "WorkBuddy window not found. Is it running?"}
     print(f"  Found HWND={hwnd}")
 
-    # Step 2: Activate & position
-    print("[2/6] Activating & positioning window...")
+    # Step 2: Activate & position (adaptive)
+    print("[2/6] Activating & positioning window (adaptive)...")
     activate_window(hwnd)
-    position_window(hwnd)
+    
+    # Use adaptive positioning
+    win_pos = config.get("window_position", DEFAULT_CONFIG["window_position"])
+    x, y, win_w, win_h = position_window_adaptive(hwnd, win_pos)
+    
     activate_window(hwnd)
     left, top, right, bottom = get_rect(hwnd)
-    win_w, win_h = right - left, bottom - top
-    print(f"  Window: ({left},{top})->({right},{bottom}) [{win_w}x{win_h}]")
+    print(f"  Final window: ({left},{top})->({right},{bottom}) [{right-left}x{bottom-top}]")
 
     if debug:
         win_img = ImageGrab.grab(bbox=(left, top, right, bottom))
