@@ -1,0 +1,14 @@
+{
+  "name": "workbuddy-auto-signin",
+  "description": "Automate daily sign-in for WorkBuddy (腾讯云 CodeBuddy AI 助手) on Windows using image recognition and adaptive coordinate clicking.",
+  "category": "automation",
+  "author": "Joy4Fire",
+  "source": "Joy4Fire/workbuddy-auto-signin-skills",
+  "license": "MIT",
+  "path": ".",
+  "tags": ["windows", "workbuddy", "automation", "opencv", "pyautogui"],
+  "stars": 0,
+  "downloads": 0,
+  "featured": false,
+  "verified": false
+}

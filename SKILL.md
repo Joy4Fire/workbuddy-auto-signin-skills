@@ -1,55 +1,78 @@
 ---
 name: workbuddy-auto-signin
 description: >
-  This skill should be used when users need to automatically sign in to WorkBuddy
-  (腾讯云 CodeBuddy AI 助手桌面应用) on Windows. Handles window management,
-  UI automation via image recognition (OpenCV), and coordinate-based clicking.
-  Trigger keywords: 自动签到, 每日签到, WorkBuddy签到, 自动领取积分.
-agent_created: true
+  Automate daily sign-in for WorkBuddy (腾讯云 CodeBuddy AI 助手) on Windows.
+  Uses image recognition (OpenCV) and adaptive coordinate clicking.
+  Trigger when user says: 签到, 每日签到, WorkBuddy签到, 自动领取积分, sign in, daily check-in.
+license: MIT
 version: 1.0.0
-tags: [automation, windows, workbuddy, desktop-ui]
+tags: [automation, windows, workbuddy, desktop-ui, opencv]
 ---
 
 # WorkBuddy Auto Sign-in
 
-Automated daily sign-in for **WorkBuddy** (Electron desktop app) using image recognition + coordinate clicking.
+Automated daily sign-in for **WorkBuddy** (腾讯云 CodeBuddy AI 助手桌面应用) on Windows using image recognition + adaptive coordinate clicking.
 
-> ⚠️ **Windows only** — relies on Win32 APIs (`ctypes.windll.user32`), `pyautogui`, `PIL`, and OpenCV.
+> ⚠️ **Windows only** — relies on Win32 APIs (`ctypes`), `pyautogui`, `PIL`, and OpenCV.
 
-## Prerequisites
+## When to Use
 
-| Dependency | Purpose | Install |
-|---|---|---|
-| Python 3.11+ | Runtime | Managed runtime preferred |
-| pyautogui | Mouse/keyboard control | Pre-installed in managed env |
-| Pillow (`PIL`) | Screen capture | Pre-installed in managed env |
-| numpy + opencv-python | Image analysis / button detection | Install if missing |
-| ctypes (stdlib) | Win32 API calls | Built-in |
+Use this skill when the user requests any of the following:
+- 签到 / 每日签到
+- WorkBuddy签到 / 自动领取积分
+- sign in / daily check-in / claim daily rewards
 
-Check/install dependencies:
+## Setup
+
+### Install Dependencies
 
 ```bash
 pip install pyautogui pillow numpy opencv-python-headless
 ```
 
-## How It Works
+### Install Skill
 
-Since WorkBuddy is an **Electron app**, its internal DOM elements are not accessible via standard accessibility APIs (pywinauto UIA sees only a `Chrome Legacy Window`). The skill uses a **visual approach**:
-
-1. **Window Management**: Find WorkBuddy via Win32 `EnumWindows`, restore if minimized, move to primary monitor at known coordinates `(340,50)→(1540,950)`.
-2. **Panel Opening**: Click the user avatar (bottom-left sidebar) to pop up the sign-in panel.
-3. **Button Detection**: Use **OpenCV grayscale thresholding (<120)** to detect the dark "立即领取" button within the green card region. Falls back to saved coordinates if detection fails.
-4. **Execution**: **Double-click** the button (single click does NOT trigger sign-in!).
-5. **Verification**: Capture result screenshot; success shows "✅ 领取成功！获得 150 Credits" toast.
-
-## Execution
-
-Run the script directly:
+Copy this skill to your WorkBuddy skills directory:
 
 ```bash
-python scripts/auto_signin.py --debug    # with debug screenshots
-python scripts/auto_signin.py             # silent mode
-python scripts/auto_signin.py --save-config  # print current config
+cp -r workbuddy-auto-signin ~/.workbuddy/skills/
+```
+
+Or install via WorkBuddy skill manager.
+
+## How It Works
+
+Since WorkBuddy is an **Electron app**, its internal DOM elements are not accessible via standard accessibility APIs. This skill uses a **visual approach**:
+
+1. **Window Management**: Find WorkBuddy via Win32 `EnumWindows`, restore if minimized, move to primary monitor
+2. **Panel Opening**: Click the user avatar (bottom-left sidebar) to open sign-in panel
+3. **Button Detection**: Use **OpenCV grayscale thresholding (<120)** to detect the dark "立即领取" button. Falls back to percentage-based coordinates if detection fails
+4. **Execution**: **Double-click** the button (single click does NOT trigger sign-in!)
+5. **Verification**: Capture result screenshot; success shows "✅ 领取成功！获得 150 Credits" toast
+
+## Usage
+
+### Via WorkBuddy Conversation (Recommended)
+
+Simply say:
+```
+签到
+每日签到
+WorkBuddy签到
+自动领取积分
+```
+
+### Run Script Directly
+
+```bash
+# Silent mode
+python scripts/auto_signin.py
+
+# Debug mode (save screenshots to templates/)
+python scripts/auto_signin.py --debug
+
+# Print current config
+python scripts/auto_signin.py --save-config
 ```
 
 ### Programmatic Usage
@@ -64,52 +87,72 @@ print(result["message"])
 
 # Override coordinates dynamically:
 result = run_signin(config_override={
-    "signin_button": {"x_offset": 103, "y_offset": 465}
+    "signin_button": {"x_percent": 0.0858, "y_percent": 0.5167}
 })
 ```
 
 ## Configuration
 
-Config file: `<skill-dir>/config/signin_config.json`
+Config file: `config/signin_config.json`
 
 ```json
 {
-  "window_position": { "x": 340, "y": 50, "width": 1200, "height": 900 },
-  "avatar_click": { "x_offset": 38, "y_from_bottom": 48 },
+  "avatar_click": {
+    "x_percent": 0.0317,
+    "y_from_bottom_percent": 0.0533
+  },
   "signin_button": {
-    "x_offset": 103,
-    "y_offset": 465,
+    "x_percent": 0.0858,
+    "y_percent": 0.5167,
     "click_method": "double"
   }
 }
 ```
 
-### Coordinate Reference (window at 340,50 → 1540,950, size 1200×900)
+### Adaptive Coordinates
 
-| Element | Absolute | Relative to Window | Notes |
-|---|---|---|---|
-| User avatar | (378, 902) | (+38, -48) | Opens sign-in panel |
-| **Sign-in button** | **(443, 515)** | **(+103, +465)** | Must double-click! |
+Coordinates are **percentage-based** to adapt to different window sizes:
 
-### Adaptability
-
-If WorkBuddy updates its UI layout:
-
-1. Run with `--debug` to get screenshots at each step.
-2. Inspect `templates/step3_panel.png` to find new button location.
-3. Update `signin_config.json` coordinates.
-4. Or let OpenCV auto-detect (works for dark buttons in the green card region).
+| Element | Position | Description |
+|---------|----------|-------------|
+| Avatar | 3.17% from left, 5.33% from bottom | Opens sign-in panel |
+| Button | 8.58% from left, 51.67% from top | "立即领取" button |
 
 ## Troubleshooting
 
 | Symptom | Cause | Fix |
-|---|---|---|
-| `FailSafeException: mouse moving to corner` | Window minimized → coords = (-32000,-32000) | Code handles this via `IsIconic()` check |
-| Clicks "退出登录" instead of sign-in | Y-coordinate too low (near bottom of panel) | Check config y_offset; button is in green card (~top+465), not panel bottom |
-| Button found but no response | Single-click used | **Must use `doubleClick()`** — single click only focuses |
-| Panel doesn't open after avatar click | Window lost focus / avatar coord shifted | Ensure `SetForegroundWindow()` called before click; verify avatar offset |
-| OpenCV finds nothing | Button color changed or panel not open | Verify panel is visible; fall back to manual coords in config |
+|----------|-------|-----|
+| `WorkBuddy window not found` | App not running | Start WorkBuddy first |
+| Clicks wrong area | Window size changed | Run with `--debug`, check screenshots |
+| Button found but no response | Not using double-click | Config has `click_method: "double"` |
+| OpenCV finds nothing | UI layout changed | Update percentages in config |
 
-## Key Technical Notes
+## Quick Reference
 
-- See `references/technical_notes.md` for detailed debugging history and pixel-mapping discoveries.
+| Task | Command |
+|------|---------|
+| Run sign-in | `python scripts/auto_signin.py` |
+| Debug mode | `python scripts/auto_signin.py --debug` |
+| View config | `python scripts/auto_signin.py --save-config` |
+| Install deps | `pip install pyautogui pillow numpy opencv-python-headless` |
+
+## File Structure
+
+| File | Purpose |
+|------|---------|
+| `SKILL.md` | AI agent instruction document (trigger words, workflow) |
+| `README.md` | Human-readable project documentation |
+| `scripts/auto_signin.py` | Core sign-in script (adaptive coordinates) |
+| `config/signin_config.json` | Coordinate configuration (percentage format) |
+| `references/technical_notes.md` | Technical documentation (debug history) |
+| `templates/` | Debug screenshot directory (gitignored) |
+
+## Important Notes
+
+- **Why double-click?** Single click only focuses the button, doesn't trigger sign-in
+- **Why percentage coordinates?** Adapts to different window sizes and screen resolutions
+- **Why OpenCV?** Electron apps don't expose UI elements to accessibility APIs
+
+---
+
+_This skill is not officially affiliated with WorkBuddy._
