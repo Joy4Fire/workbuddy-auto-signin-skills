@@ -3,6 +3,7 @@ name: workbuddy-auto-signin
 description: >
   Automate daily sign-in for WorkBuddy (腾讯云 CodeBuddy AI 助手) on Windows.
   Uses image recognition (OpenCV) and adaptive coordinate clicking.
+  Auto-adapts to different screen resolutions and window sizes.
   Trigger when user says: 签到, 每日签到, WorkBuddy签到, 自动领取积分, sign in, daily check-in.
 license: MIT
 version: 1.0.0
