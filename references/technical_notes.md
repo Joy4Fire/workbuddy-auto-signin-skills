@@ -122,3 +122,10 @@ After first v9 implementation, a second-pass review found 4 remaining issues:
 **Key finding during review:** The 09:39 v8 "successful" sign-in actually double-clicked a wrong coordinate (panel never opened, NRC view active), silently navigating WorkBuddy to the NRC panel. That mis-navigation is the visible "freeze" symptom. v9.2 reliably blocks it.
 
 **Threshold calibration:** Real panel-open = 6.6% pixel change (per 06-20 log). Abort threshold = 3.0%. NRC-view false change = 2.9%. Gap is clean.
+
+### Deployment / Remote (2026-07-08)
+
+- Remote switched from HTTPS-with-embedded-PAT to **SSH** (`git@github.com:Joy4Fire/workbuddy-auto-signin-skills.git`).
+- Local SSH key: `~/.ssh/id_rsa` (no passphrase, identity `wangjian@223.2.44.120`), registered as an Authentication Key on the GitHub account.
+- Push workflow: key must be loaded into ssh-agent first (`ssh-add ~/.ssh/id_rsa`), then `git push origin main` works with no token in the URL.
+- Reason for switch: avoid leaking a plaintext PAT in the remote URL.
