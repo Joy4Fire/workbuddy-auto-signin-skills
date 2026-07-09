@@ -1,31 +1,52 @@
 # workbuddy-auto-signin
 
-WorkBuddy 桌面应用（腾讯云 CodeBuddy AI 助手）**自动签到工具**，通过图像识别 + 坐标点击实现每日积分领取。
+**WorkBuddy 桌面应用**（腾讯云 CodeBuddy AI 助手）**自动签到技能** — v10 Vision-Driven Edition。
 
-> ⚠️ **仅支持 Windows** — 依赖 Win32 API (`ctypes`)、`pyautogui`、`PIL`、`OpenCV`。
+由 WorkBuddy 自己的多模态 Agent 通过截图视觉分析完成 UI 元素定位，Python 脚本只负责窗口管理、截图、点击等纯机械动作。
 
-## 🎯 主要能力
+> ⚠️ **仅支持 Windows** — 依赖 Win32 API (`ctypes`)、`pyautogui`、`PIL`、`numpy`。
 
-- **自适应坐标**：使用百分比定位，自动适配不同窗口大小和屏幕分辨率
-- **OpenCV 按钮检测**：自动识别"立即领取"按钮位置，无需手动配置坐标
-- **窗口管理**：自动处理最小化窗口、多显示器、窗口激活（v9 起**单次**激活，避免轰炸 Electron 主线程）
-- **双点击触发**：正确使用双击（单击无法触发签到）
-- **v9.2 安全机制**：锁屏守卫、面板打开像素校验+重试、按钮检测 sanity-check、真实错误状态、签后清理面板——彻底解决旧版导致 WorkBuddy 卡死的问题
-- **调试模式**：`--debug` 保存每步截图，`--check-lock` 仅检测锁屏
+---
+
+## 🎯 核心特性
+
+- **🤖 视觉模型驱动** — 全部 UI 元素定位由 Agent 多模态视觉完成，**无 OpenCV、无硬编码坐标、无阈值调参**
+- **🪟 自适应窗口** — 百分比坐标 + 窗口自动定位，适配不同屏幕分辨率和窗口大小
+- **⏰ 凌晨友好** — 内置显示器唤醒 + 输入可达检测，应对 4AM 自动化的环境挑战
+- **🛡️ 多重安全守卫** — 锁屏检查、输入隔离检测、像素变化验证，避免静默失败
+- **🔧 薄 helper 架构** — Python 脚本是一个 350 行的 CLI 工具，所有"智能"在 Agent 侧
+- **🧪 调试友好** — 每步可独立调用（`find-window` / `screenshot` / `click`），便于排错
+
+## 🆕 v10 vs v9 主要变化
+
+| 维度 | v9 (OpenCV) | v10 (Vision-Driven) |
+|------|------------|---------------------|
+| 按钮定位 | OpenCV 灰度阈值（<120）+ 轮廓 | Agent 直接读截图识别 |
+| 坐标格式 | 固定百分比 + OpenCV 像素映射 | Agent 在截图坐标上直接定位 |
+| 泛化能力 | 阈值一变就失效，需重新调参 | AI 理解任意 UI 布局 |
+| 异常处理 | 硬编码规则（IDM 弹窗、面板异常） | Agent 自然理解 |
+| 依赖 | opencv-python-headless (~50MB) | 无 OpenCV（仅 pyautogui + PIL + numpy） |
+| 升级影响 | 改 UI 必须改阈值 | 改 UI 不用改代码 |
 
 ## 🚀 快速开始
 
 ### 1. 安装依赖
 
 ```bash
-pip install pyautogui pillow numpy opencv-python-headless
+pip install pyautogui pillow numpy
 ```
+
+**注意**：v10 不再需要 opencv-python-headless！如果从 v9 升级可以卸载。
 
 ### 2. 安装 Skill
 
-将本 Skill 复制到 WorkBuddy skills 目录：
+将本仓库复制到 WorkBuddy skills 目录：
 
 ```bash
+# Windows (PowerShell)
+Copy-Item -Recurse workbuddy-auto-signin "$env:USERPROFILE\.workbuddy\skills\"
+
+# Linux / WSL / macOS (仅供参考，本 skill 仅支持 Windows)
 cp -r workbuddy-auto-signin ~/.workbuddy/skills/
 ```
 
@@ -39,41 +60,78 @@ WorkBuddy签到
 自动领取积分
 ```
 
-**直接运行脚本**：
+Agent 会自动按 SKILL.md 工作流完成所有步骤。
+
+**直接调用 helper 脚本**（高级用法 / 调试）：
 ```bash
-# 静默模式
-python scripts/auto_signin.py
-
-# 调试模式（保存截图）
-python scripts/auto_signin.py --debug
-
-# 查看当前配置
-python scripts/auto_signin.py --save-config
-
-# 仅检测当前是否锁屏（不点击）
-python scripts/auto_signin.py --check-lock
+python scripts/auto_signin.py <command> [args]
 ```
 
-## 📝 工作原理（v9.2）
+可用命令：
+| Command | 用途 |
+|---------|------|
+| `find-window` | 查找 WorkBuddy HWND 与 rect |
+| `activate <HWND>` | 激活并定位窗口到主屏 |
+| `screenshot --output <path> [--region x1,y1,x2,y2]` | 截屏 |
+| `click <X> <Y> [single\|double]` | 单击/双击指定坐标 |
+| `press-key <KEY>` | 按下键盘按键 |
+| `check-lock` | 检查是否锁屏 |
+| `wake-screen` | 唤醒显示器 + 验证输入可达 |
 
-由于 WorkBuddy 是 **Electron 应用**，其内部 DOM 元素无法通过标准无障碍 API 访问（`pywinauto` UIA 只能看到 `Chrome Legacy Window`）。本 Skill 采用 **视觉方案**，并在 v9.2 加入多重安全守卫以避免旧版的"卡死"问题：
+## 🧠 工作原理
 
-0. **锁屏守卫**：交互前通过 `OpenInputDesktop` 检查当前桌面，若处于锁屏（Winlogon 安全桌面）则立即中止，不向虚空发送点击
-1. **窗口管理**：Win32 `EnumWindows` 查找窗口，最小化则恢复，移动到主显示器（v9 起单次 `SetWindowPos`，不再反复激活）
-2. **打开面板 + 校验**：点击左下角头像弹出签到面板，随后**对比截图像素验证面板是否真的打开**（真实打开变化 ≥3%）。未打开则按 `Escape` 再重试一次；仍失败则中止（可能处于非主界面视图，如 NRC 面板）
-3. **按钮检测**：**OpenCV 灰度阈值（<120）** 在绿色卡片区域检测深色"立即领取"按钮，并做 sanity-check（够暗、尺寸合理）；失败则回退配置坐标
-4. **执行签到**：**双击**按钮（单击只会选中但不会执行！）
-5. **结果 + 清理**：捕获结果截图，再按 `Escape` **关闭面板**，避免 WorkBuddy 残留半开界面看起来像卡死
+```
+Agent (multimodal LLM)         Python Helper (auto_signin.py)
+       │                                    │
+       │  ┌──── find-window ───────────────▶│
+       │  │                                  │
+       │  ◀── { hwnd, rect } ───────────────┤
+       │  │                                  │
+       │  ┌──── activate ──────────────────▶│
+       │  │                                  │
+       │  ┌──── wake-screen ───────────────▶│  (Shift key + 头像点击,
+       │  │                                  │   验证输入可达)
+       │  ◀── { status: "ok" } ─────────────┤
+       │  │                                  │
+       │  ┌──── screenshot ────────────────▶│
+       │  │                                  │
+       │  ◀── image bytes ─────────────────┤
+       │  │                                  │
+       │  [Agent 用 vision 分析: 找到头像]   │
+       │  │                                  │
+       │  ┌──── click 562 1158 ────────────▶│
+       │  │                                  │
+       │  [WorkBuddy 打开用户菜单]            │
+       │  │                                  │
+       │  ┌──── screenshot ────────────────▶│
+       │  ◀── image bytes ─────────────────┤
+       │  │                                  │
+       │  [Agent 用 vision 分析: 找到签到按钮]│
+       │  │                                  │
+       │  ┌──── click 723 612 double ──────▶│
+       │  │                                  │
+       │  ┌──── press-key escape ──────────▶│
+```
 
-### 状态与可靠性
+**关键设计原则**：
+- **零检测逻辑在 Python** — UI 元素识别由 Agent 视觉完成，脚本只做机械操作
+- **每步可独立验证** — 通过 `screenshot` 截图 + Agent Read + 视觉判断
+- **失败立刻 abort** — 不重试、不静默、不掩盖错误
 
-脚本返回 JSON 字典，**`status` 为 `success` 或 `error`，不再有静默假成功**：
+## 📋 SKILL.md 工作流
 
-- `"success"`：面板已打开且双击序列已执行（确认 UI 交互完成，但不 OCR 校验"领取成功"提示条）
-- `"error"` 含 `reason` 字段，安全中止且不点错目标：
-  - `"screen_locked"`：处于锁屏，登录后运行
-  - `"panel_not_opened"`：头像点击未打开面板（多为非主界面视图），切回主界面重试
-  - `"window_not_found"`：WorkBuddy 未运行
+Agent 按以下步骤执行（详见 `SKILL.md`）：
+
+1. **Step 0: check-lock** — 检查屏幕是否锁定
+2. **Step 0.5: wake-screen** — 唤醒显示器 + 验证输入可达
+3. **Step 1: find-window** — 找到 WorkBuddy IDE 窗口
+4. **Step 1.5: activate** — 激活窗口并定位到主屏
+5. **Step 2: screenshot + 视觉分析** — 截取基线，定位用户头像坐标
+6. **Step 3: click avatar** — 点击头像打开用户菜单
+7. **Step 3b: 视觉验证面板** — 截图确认菜单已打开
+8. **Step 4: 视觉定位签到按钮** — 找到"立即领取"按钮
+9. **Step 5: double-click** — 双击按钮（单击无效！）
+10. **Step 6: press-key escape** — 关闭面板
 
 ## ⚙️ 配置说明
 
@@ -81,63 +139,50 @@ python scripts/auto_signin.py --check-lock
 
 ```json
 {
-  "avatar_click": {
-    "x_percent": 0.0317,
-    "y_from_bottom_percent": 0.0533
-  },
-  "signin_button": {
-    "x_percent": 0.06,
-    "y_percent": 0.569,
-    "click_method": "double"
+  "window_position": {
+    "width_percent": 0.6,
+    "height_percent": 0.7,
+    "x_percent": 0.2,
+    "y_percent": 0.15
   }
 }
 ```
 
-### 坐标系统（自适应）
+只保留窗口定位参数——v10 不需要按钮坐标，所有元素都由 Agent 视觉定位。
 
-| 元素 | 位置 | 说明 |
-|------|--------|------|
-| 用户头像 | 左侧 3.17%，底部往上 5.33% | 点击打开签到面板 |
-| 签到按钮 | 左侧 6.00%，顶部往下 56.90% | "立即领取"按钮 |
-
-**自适应说明**：坐标为百分比格式，自动根据窗口大小计算绝对坐标，适配不同屏幕分辨率。
-
-## 🔧 故障排除
+## 🐛 故障排除
 
 | 现象 | 原因 | 解决方法 |
 |------|------|----------|
-| `WorkBuddy window not found` | 应用未运行 | 先启动 WorkBuddy |
-| `reason: screen_locked` | 处于锁屏状态 | 登录 / 解锁后运行 |
-| `reason: panel_not_opened` | 处于非主界面视图（如 NRC 面板） | 切回主界面，重新运行 |
-| 点击到错误位置 | 窗口大小改变 | 运行 `--debug`，检查截图 |
-| 按钮找到但无响应 | 未使用双击 | 配置中已设置 `click_method: "double"` |
-| OpenCV 检测失败 | UI 布局改变 | 更新配置文件中的百分比坐标 |
+| `WorkBuddy window not found` | 应用未运行 | 启动 WorkBuddy 后重试 |
+| `wake-screen` 返回 `input_blocked` | 会话隔离或输入事件被拦截 | 白天手动运行；或检查 PC 是否处于 UAC / 锁屏中间态 |
+| 头像点击后面板未打开 | WorkBuddy 处于非主界面视图 | 在 WorkBuddy 内手动切回主界面再触发 skill |
+| 双击按钮无响应 | 用了单击 | 必须用 `double`（脚本默认） |
+| 凌晨 4 点失败 | 见 `references/technical_notes.md` | 调整触发时间 + 显示器不休眠 |
 
 ## 📂 文件结构
 
 | 文件 | 作用 |
 |------|------|
-| `SKILL.md` | AI 模型阅读的指令文档（触发词、工作流程） |
-| `README.md` | 人类阅读的项目说明 |
-| `scripts/auto_signin.py` | 核心签到脚本（自适应坐标版本） |
-| `config/signin_config.json` | 坐标配置文件（百分比格式） |
-| `references/technical_notes.md` | 技术文档（调试历史、像素映射、卡死修复分析） |
-| `debug_enum.py` | 诊断工具：枚举 WorkBuddy 窗口与 PID |
-| `templates/` | 调试截图保存目录（`.gitignore` 已忽略） |
+| `SKILL.md` | Agent 指令文档（触发词、工作流、状态机） |
+| `README.md` | 本文件，人类阅读的项目说明 |
+| `scripts/auto_signin.py` | 薄 helper CLI 工具（350 行） |
+| `config/signin_config.json` | 窗口定位配置 |
+| `debug_enum.py` | 诊断工具：枚举所有 WorkBuddy 窗口与 PID |
+| `references/technical_notes.md` | 技术笔记：架构演进、踩过的坑、4AM 失败的根因分析 |
+| `templates/` | 调试截图目录（gitignore 忽略） |
 
-## 📌 重要技术要点
+## 📜 许可证
 
-- **为什么必须双击？** 单击只会选中按钮，不会触发签到动作
-- **为什么用百分比坐标？** 适配不同窗口大小和屏幕分辨率
-- **为什么用 OpenCV？** Electron 应用不向外暴露 UI 元素，只能通过图像识别
-- **为什么加锁屏守卫？** 凌晨 4 点自动化运行时 PC 可能锁屏，不加守卫点击落空、`ImageGrab` 会截到安全桌面
-- **为什么做像素校验？** 旧版面板没打开仍盲目双击，点到错误 UI 并让 WorkBuddy 卡死；v9.2 改为未打开即中止
-- **为什么签后清理面板？** 残留半开的签到浮层会让 WorkBuddy 看起来像卡死，`Escape` 可干净关闭
+Apache License 2.0
 
-## 📄 许可证
+## 🙋 贡献
 
-MIT License
+欢迎提交 Issue / PR 报告问题或改进。常见改进方向：
+- 适配其他平台的 WorkBuddy 客户端（macOS / Linux）
+- 优化 agent prompt 减少 token 消耗
+- 添加更多错误状态的可恢复分支
 
 ---
 
-_声明：本工具并非 WorkBuddy 官方出品。_
+_本工具并非 WorkBuddy 官方出品。_

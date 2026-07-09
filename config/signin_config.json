@@ -1,1 +1,12 @@
-{"window_position": {"width_percent": 0.6, "height_percent": 0.7, "x_percent": 0.2, "y_percent": 0.15, "note": "60% screen width, 70% screen height, 20% from left, 15% from top"}, "avatar_click": {"x_percent": 0.0317, "y_from_bottom_percent": 0.0533, "note": "3.17% from left, 5.33% from bottom"}, "signin_button": {"x_percent": 0.06, "y_percent": 0.569, "click_method": "double", "note": "6% from left, 56.9% of top (corrected 2026-06-19)"}, "detection_region": {"x1_percent": 0.01, "y1_percent": 0.42, "x2_percent": 0.2, "y2_percent": 0.62, "note": "Expanded detection region (corrected 2026-06-19)"}, "version": "v9.2-freeze-fixed-reviewed", "last_success": "2026-07-08T09:39", "note": "v9.2: 修复AllowSetForegroundWindow语义(改用ASFW_ANY)、OpenInputDesktop权限位、新增面板打开重试(Esc+再点)、清理死代码。阈值3%对照真实面板打开6.6%变化校准。"}
+{
+  "window_position": {
+    "width_percent": 0.6,
+    "height_percent": 0.7,
+    "x_percent": 0.2,
+    "y_percent": 0.15,
+    "note": "60% screen width, 70% screen height, 20% from left, 15% from top"
+  },
+  "version": "v10-vision-driven",
+  "last_success": "2026-07-09T08:59",
+  "note": "v10: 移除所有OpenCV配置（avatar_click百分比/signin_button百分比/detection_region）。UI元素定位完全由Agent视觉模型驱动。Python脚本变为薄helper。新增test-input命令检测4AM输入隔离问题。"
+}

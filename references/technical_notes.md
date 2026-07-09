@@ -129,3 +129,89 @@ After first v9 implementation, a second-pass review found 4 remaining issues:
 - Local SSH key: `~/.ssh/id_rsa` (no passphrase, identity `wangjian@223.2.44.120`), registered as an Authentication Key on the GitHub account.
 - Push workflow: key must be loaded into ssh-agent first (`ssh-add ~/.ssh/id_rsa`), then `git push origin main` works with no token in the URL.
 - Reason for switch: avoid leaking a plaintext PAT in the remote URL.
+
+---
+
+## v10 Architecture — Vision-Driven (2026-07-09)
+
+### Why v10?
+
+v9.2 used OpenCV grayscale thresholding (gray<120) to find the dark "立即领取" button. This worked but had a structural problem: **any UI change requires re-tuning the threshold or pixel percentages**. After several rounds of "WorkBuddy changed the panel layout → manually re-tune the numbers" cycles, it became clear the detection logic was the wrong layer.
+
+**Insight**: WorkBuddy's automation host is itself a **multimodal LLM (Agent)** that can already understand screenshots perfectly. So instead of trying to encode UI understanding in Python+OpenCV, just let the Agent *be* the vision model.
+
+### Architecture Comparison
+
+**v9.2 (OpenCV-driven)**:
+```
+Python script:
+  - Find window
+  - Take screenshot
+  - OpenCV: gray<120 threshold → find largest dark blob in ROI
+  - Verify blob is button-like (width, height sanity-check)
+  - Double-click at center
+  - Save result screenshot
+```
+
+**v10 (Vision-driven)**:
+```
+Python helper (350 lines, ZERO detection):
+  - find-window / activate / screenshot / click / press-key / check-lock / wake-screen
+Agent (multimodal LLM):
+  - Read screenshot via Read tool
+  - Visually locate avatar / button
+  - Report pixel coordinates
+  - Send click command
+  - Verify result via next screenshot
+```
+
+### 4AM Failure Analysis (2026-07-09 03:55-04:05)
+
+**Symptom**: All clicks (pyautogui / SendInput / mouse_event / PostMessage / keyboard) produced 0% pixel change.
+
+**Diagnostic walkthrough** (all in the 4AM run):
+- Screenshot worked: minimize+restore produced 48% pixel change → `ImageGrab.grab()` reads GDI/DWM frame buffer fine
+- Window responsive: WM_NULL SendMessage returned 0 → message queue is alive
+- Window visible: WS_VISIBLE set, WS_DISABLED clear, no layered/transparent flags
+- No occlusion: `WindowFromPoint` at click position returned the same HWND
+- All input methods failed: 0% change from pyautogui.click, SendInput, mouse_event, PostMessage(WM_LBUTTONDOWN), keyboard F5/Ctrl+R/Escape
+
+**Root cause**: Windows desktop session isolation. The automation process could read the screen (GDI read permission) but could not inject input events into the interactive desktop (write permission denied). This is a system-level security boundary, not a skill bug.
+
+**Why it worked on other days**: 6月21日-7月7日的4AM 全部成功。7月9日失败说明当时系统状态异常（可能是 Windows 更新、UAC 弹窗、锁屏转换中间态等偶发情况）。
+
+**Why `wake-screen` is the right fix**: v10 的 `wake-screen` 用"点击头像 → 是否打开面板"作为判据。`Step 0.5` 执行时如果 `input_blocked`，就**立即 abort**，不浪费 7 步流程的 token。这是 v9.2 缺乏的"早失败"机制。
+
+### v10 Improvements Beyond "Just Use Vision"
+
+1. **No more threshold tuning** — UI changes don't break the skill
+2. **Smarter error messages** — Agent can describe what it sees in the screenshot ("I see the user menu is already open, so the avatar click did work")
+3. **Faster troubleshooting** — Each step produces a screenshot the Agent can reason about, instead of a binary "did the panel open" check
+4. **Lower Python maintenance** — 350 lines vs 700+ lines in v9.2
+5. **No opencv-python dependency** — saves ~50MB and eliminates version conflicts
+
+### v10 End-to-End Validation (2026-07-09 10:10)
+
+Full workflow executed successfully:
+- Step 0 `check-lock` → `screen_locked: false`
+- Step 0.5 `wake-screen` → `status: ok, avatar_click_change_pct: 5.74%`
+- Step 1 `find-window` → HWND=10958058 (IDE window)
+- Step 1.5 `activate` → window positioned at (512, 216, 2048, 1223)
+- Step 2 `screenshot` + Agent vision analysis → avatar at (562, 1158)
+- Step 3 `click` → 9.80% pixel change (panel opened)
+- Step 3b `screenshot` verification → "和光同尘" user menu visible with "Buddy 加油站" card showing "今日已领"
+- Step 6 `press-key escape` → panel closed cleanly
+
+**Note**: The "今日已领" status is expected — the user had already signed in earlier that morning (08:59 manual run). The skill correctly detected this state and would skip the click if running step 4.
+
+### Multi-Monitor / Chrome Edge Case
+
+The system sometimes has a second WorkBuddy window: `"Tencent Cloud WorkBuddy - Google Chrome"` (the web client). This window sometimes parks itself at `(2552, -8) → (5128, 1400)` (a position straddling the two monitors in a dual-display setup).
+
+`find-workbuddy-window` correctly prioritizes the **IDE window** (not the Chrome client) because the daily sign-in panel only exists in the IDE. The Chrome client's "成长计划" / "每日成长答题" features are different functionality, not the daily sign-in reward.
+
+### SSH Deployment Notes (carried over from v9.2)
+
+- Remote: `git@github.com:Joy4Fire/workbuddy-auto-signin-skills.git`
+- SSH key: `~/.ssh/id_rsa` (no passphrase)
+- Push requires `ssh-add ~/.ssh/id_rsa` first to load the key into the agent
